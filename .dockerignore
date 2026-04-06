@@ -1,0 +1,17 @@
+# Environnement Python local
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Données audio générées (montées en volumes)
+database/
+segments/
+uploads/
+filtered/
+
+# Fichiers de développement
+*.pdf
+.git/
+.gitignore

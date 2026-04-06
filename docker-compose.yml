@@ -1,0 +1,15 @@
+services:
+  tns-studio:
+    build: .
+    container_name: tns-studio
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persistance des données audio entre les redémarrages du container
+      - ./database:/app/database
+      - ./segments:/app/segments
+      - ./uploads:/app/uploads
+      - ./filtered:/app/filtered
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped

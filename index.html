@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TNS Studio — ESP/UCAD DIC2</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="top-bar">
+    <div class="container flex-between">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12 Q6 4 10 12 Q14 20 18 12 Q20 8 22 12"/>
+        </svg>
+        <div>
+          <h1 class="brand-title">TNS <span class="text-primary">Studio</span></h1>
+          <p class="brand-sub">Traitement Numérique du Signal — ESP/UCAD DIC2</p>
+        </div>
+      </div>
+      <div class="status-bar">
+        <span class="status-item">
+          <span class="status-dot"></span>
+          API: Flask
+        </span>
+        <span class="status-item">v1.0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== TAB NAV ===== -->
+  <nav class="tab-nav">
+    <div class="container">
+      <button class="tab-btn active" id="tab-recording" onclick="switchTab('recording')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 2"/>
+        </svg>
+        Partie 1 — Numérisation
+      </button>
+      <button class="tab-btn" id="tab-filtering" onclick="switchTab('filtering')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="14" width="4" height="7"/><rect x="10" y="9" width="4" height="12"/>
+          <rect x="17" y="4" width="4" height="17"/>
+        </svg>
+        Partie 2 — FFT &amp; Filtrage
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===== MAIN ===== -->
+  <main class="container main-content">
+
+    <!-- ===================== PANEL 1: RECORDING ===================== -->
+    <section id="panel-recording" class="panel">
+
+      <div class="panel-header">
+        <div class="panel-icon primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/>
+            <line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+          </svg>
+        </div>
+        <div>
+          <h2>Numérisation &amp; Segmentation</h2>
+          <p class="text-muted">Enregistrement vocal et découpage automatique</p>
+        </div>
+      </div>
+
+      <!-- Param Grid -->
+      <div class="param-grid">
+
+        <div class="field">
+          <label class="field-label">Fréquence (Hz)</label>
+          <select id="sampleRate" class="input">
+            <option value="16000">16 kHz</option>
+            <option value="22050">22.05 kHz</option>
+            <option value="44100" selected>44.1 kHz</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Codage</label>
+          <div class="btn-group">
+            <button class="toggle-btn active" id="bd-16" onclick="setBitDepth(16)">16 bits</button>
+            <button class="toggle-btn" id="bd-32" onclick="setBitDepth(32)">32 bits</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Durée (s)</label>
+          <input type="number" id="duration" class="input" min="1" max="60" value="5" />
+        </div>
+
+        <div class="field">
+          <label class="field-label">Locuteur</label>
+          <input type="text" id="locuteur" class="input mono" value="locuteur_01" />
+        </div>
+
+        <div class="field">
+          <label class="field-label">Session</label>
+          <input type="text" id="session" class="input mono" value="session_01" />
+        </div>
+
+      </div>
+
+      <!-- Equalizer -->
+      <div class="card">
+        <span class="card-label" id="eq-label-rec">Égaliseur</span>
+        <canvas id="eqCanvas" height="70"></canvas>
+      </div>
+
+      <!-- Waveform -->
+      <div class="card">
+        <span class="card-label" id="waveLabel">En attente...</span>
+        <canvas id="waveCanvas" height="100"></canvas>
+      </div>
+
+      <!-- Controls -->
+      <div class="btn-row">
+        <button class="btn btn-primary" id="recBtn" onclick="toggleRecording()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="2" width="6" height="11" rx="3"/>
+            <path d="M5 10a7 7 0 0 0 14 0"/>
+          </svg>
+          Enregistrer
+        </button>
+        <button class="btn btn-glass" id="saveBtn" onclick="handleSave()" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Sauvegarder
+        </button>
+      </div>
+
+      <!-- Segmentation -->
+      <div class="section-divider">
+        <h3 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/>
+            <circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>
+            <line x1="6" y1="8" x2="6" y2="16"/><line x1="18" y1="8" x2="18" y2="16"/>
+            <line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="18" x2="16" y2="18"/>
+          </svg>
+          Segmentation automatique
+        </h3>
+
+        <div class="seg-grid">
+          <div class="field">
+            <label class="field-label" id="thresholdLabel">Seuil d'amplitude: 0.020</label>
+            <input type="range" id="threshold" min="0.001" max="0.1" step="0.001" value="0.02"
+              oninput="document.getElementById('thresholdLabel').textContent='Seuil d\'amplitude: '+parseFloat(this.value).toFixed(3)"
+              class="slider" />
+          </div>
+          <div class="field">
+            <label class="field-label" id="silenceLabel">Silence min: 300 ms</label>
+            <input type="range" id="minSilence" min="50" max="1000" step="50" value="300"
+              oninput="document.getElementById('silenceLabel').textContent='Silence min: '+this.value+' ms'"
+              class="slider secondary" />
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" id="segBtn" onclick="handleSegment()" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          Segmenter
+        </button>
+
+        <div id="segmentsList" class="segments-list hidden"></div>
+      </div>
+
+    </section>
+
+    <!-- ===================== PANEL 2: FILTERING ===================== -->
+    <section id="panel-filtering" class="panel hidden">
+
+      <div class="panel-header">
+        <div class="panel-icon secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="14" width="4" height="7"/><rect x="10" y="9" width="4" height="12"/>
+            <rect x="17" y="4" width="4" height="17"/>
+          </svg>
+        </div>
+        <div>
+          <h2>Analyse FFT &amp; Filtrage</h2>
+          <p class="text-muted">Spectre fréquentiel et filtre rectangulaire</p>
+        </div>
+      </div>
+
+      <!-- File Upload Drop Zone -->
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleFileDrop(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p id="dropzoneText">Glissez un fichier audio ou cliquez pour charger</p>
+        <p class="text-muted small">WAV, MP3, OGG</p>
+        <input type="file" id="fileInput" accept="audio/*" onchange="handleFileUpload(this)" class="hidden" />
+      </div>
+
+      <!-- Playback row -->
+      <div id="playbackRow" class="card hidden">
+        <div class="flex-between">
+          <div class="flex-row gap-sm">
+            <button class="btn btn-icon" id="playBtn" onclick="togglePlay()">
+              <svg id="playIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+            </button>
+            <div>
+              <p class="mono small" id="audioFileName">—</p>
+              <p class="text-muted small mono" id="audioMeta">—</p>
+            </div>
+          </div>
+        </div>
+        <canvas id="eqCanvasFft" height="60" class="mt-sm"></canvas>
+      </div>
+
+      <!-- Grille signal original + signal filtré -->
+      <div class="wave-grid">
+        <div class="card">
+          <span class="card-label">Signal temporel x(t)</span>
+          <canvas id="waveCanvasFft" height="100"></canvas>
+        </div>
+        <div class="card hidden" id="filteredWaveCard">
+          <span class="card-label secondary-label">Signal filtré x̂(t)</span>
+          <canvas id="filteredWaveCanvas" height="100"></canvas>
+        </div>
+      </div>
+
+      <!-- Spectre FFT -->
+      <div class="card">
+        <span class="card-label">Spectre |X(f)| — <span class="text-primary">Cyan: original</span>, <span class="text-secondary">Magenta: filtré</span></span>
+        <div id="spectrumEmpty" class="spectrum-empty">Chargez un fichier audio pour voir le spectre</div>
+        <canvas id="spectrumCanvas" height="220" class="hidden"></canvas>
+      </div>
+
+      <!-- Filter Controls -->
+      <div class="card filter-card">
+        <h3 class="section-title mb-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          Filtre rectangulaire
+        </h3>
+
+        <div class="btn-group mb-sm">
+          <button class="toggle-btn active" id="ft-bandpass" onclick="setFilterType('bandpass')">Passe-bande</button>
+          <button class="toggle-btn secondary" id="ft-bandstop" onclick="setFilterType('bandstop')">Coupe-bande</button>
+        </div>
+
+        <div class="param-grid two-col">
+          <div class="field">
+            <label class="field-label">f_min (Hz)</label>
+            <input type="number" id="fmin" class="input mono" min="0" value="300" />
+          </div>
+          <div class="field">
+            <label class="field-label">f_max (Hz)</label>
+            <input type="number" id="fmax" class="input mono" min="0" value="3000" />
+          </div>
+        </div>
+
+        <div class="btn-row mt-sm">
+          <button class="btn btn-primary" id="filterBtn" onclick="applyFilter()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+            Appliquer le filtre
+          </button>
+          <button class="btn btn-glass" id="downloadBtn" onclick="handleDownload()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Télécharger WAV filtré
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ===== TOAST ===== -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="container flex-between">
+      <span>ESP — UCAD | DIC 2 (4A) — TNS 2025–2026</span>
+      <span>Dr. Moustapha MBAYE</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
