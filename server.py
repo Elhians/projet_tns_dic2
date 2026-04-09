@@ -17,24 +17,87 @@ import os
 import io
 import re
 import uuid
+import shutil
+from pathlib import Path
 
 import numpy as np
 from scipy.fft import fft, ifft, fftfreq
 import scipy.io.wavfile as wavfile
 # Résolution ffmpeg/ffprobe sous Windows (dev local).
 # Sous Linux/Docker, ffmpeg est installé via apt et disponible dans le PATH.
-_FFMPEG_BIN_DIR = r"C:\Users\atk11\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
+_FFMPEG_BIN_DIR = str(
+    Path.home()
+    / "AppData"
+    / "Local"
+    / "Microsoft"
+    / "WinGet"
+    / "Packages"
+    / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+    / "ffmpeg-8.1-full_build"
+    / "bin"
+)
 if os.path.isdir(_FFMPEG_BIN_DIR) and _FFMPEG_BIN_DIR not in os.environ.get("PATH", ""):
     os.environ["PATH"] = _FFMPEG_BIN_DIR + os.pathsep + os.environ.get("PATH", "")
 
 from pydub import AudioSegment
 
-_FFMPEG_EXE  = os.path.join(_FFMPEG_BIN_DIR, "ffmpeg.exe")
-_FFPROBE_EXE = os.path.join(_FFMPEG_BIN_DIR, "ffprobe.exe")
-if os.path.isfile(_FFMPEG_EXE):
-    AudioSegment.converter = _FFMPEG_EXE
-if os.path.isfile(_FFPROBE_EXE):
-    AudioSegment.ffprobe = _FFPROBE_EXE
+
+def _configure_ffmpeg() -> None:
+    """
+    Configure pydub pour localiser ffmpeg/ffprobe de manière robuste.
+
+    Ordre de recherche :
+    1) Exécutables déjà disponibles dans le PATH.
+    2) Répertoire winget de l'utilisateur courant (Windows).
+    3) Compatibilité rétro : chemin statique _FFMPEG_BIN_DIR ci-dessus.
+    """
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+
+    # Windows winget crée des liens dans ce dossier ; utile si PATH global manque.
+    links_dir = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Links"
+    if (not ffmpeg_path or not ffprobe_path) and links_dir.is_dir():
+        ff_link = links_dir / "ffmpeg.exe"
+        fp_link = links_dir / "ffprobe.exe"
+        if ff_link.is_file() and fp_link.is_file():
+            ffmpeg_path = str(ff_link)
+            ffprobe_path = str(fp_link)
+
+    # Recherche dans le package winget de l'utilisateur courant.
+    if not ffmpeg_path or not ffprobe_path:
+        home = Path.home()
+        winget_root = home / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
+        pattern = "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+        if winget_root.is_dir():
+            candidate_pkg = winget_root / pattern
+            if candidate_pkg.is_dir():
+                try:
+                    for bin_dir in candidate_pkg.rglob("bin"):
+                        ff = bin_dir / "ffmpeg.exe"
+                        fp = bin_dir / "ffprobe.exe"
+                        if ff.is_file() and fp.is_file():
+                            ffmpeg_path = str(ff)
+                            ffprobe_path = str(fp)
+                            break
+                except (PermissionError, OSError):
+                    # Certains sous-dossiers winget peuvent être non lisibles selon l'ACL.
+                    pass
+
+    # Compatibilité avec l'ancien chemin codé en dur.
+    if (not ffmpeg_path or not ffprobe_path) and os.path.isdir(_FFMPEG_BIN_DIR):
+        legacy_ff = os.path.join(_FFMPEG_BIN_DIR, "ffmpeg.exe")
+        legacy_fp = os.path.join(_FFMPEG_BIN_DIR, "ffprobe.exe")
+        if os.path.isfile(legacy_ff) and os.path.isfile(legacy_fp):
+            ffmpeg_path = legacy_ff
+            ffprobe_path = legacy_fp
+
+    if ffmpeg_path:
+        AudioSegment.converter = ffmpeg_path
+    if ffprobe_path:
+        AudioSegment.ffprobe = ffprobe_path
+
+
+_configure_ffmpeg()
 
 from flask import Flask, request, jsonify, send_file, abort
 from flask_cors import CORS
@@ -117,7 +180,10 @@ def _normalize_audio(data: np.ndarray) -> np.ndarray:
         Tableau float32 normalisé.
     """
     data = data.astype(np.float32)
-    if data.dtype != np.float32 or data.max() > 1.0 or data.min() < -1.0:
+    if data.size == 0:
+        return data
+
+    if data.max() > 1.0 or data.min() < -1.0:
         max_val = np.iinfo(np.int16).max  # 32767 par défaut
         if data.max() > 1.0:
             max_val = max(abs(data.max()), abs(data.min()), 1.0)
@@ -413,6 +479,8 @@ def analyze():
         audio = audio[:, 0]
     signal = _normalize_audio(audio)
     N = len(signal)
+    if N == 0:
+        return jsonify({"error": "Le fichier audio est vide ou illisible"}), 400
 
     # --- FFT ---
     spectrum    = fft(signal)
@@ -486,6 +554,8 @@ def filter_audio():
         audio = audio[:, 0]
     signal = _normalize_audio(audio)
     N = len(signal)
+    if N == 0:
+        return jsonify({"error": "Le signal source est vide. Relancer /api/analyze avec un autre fichier."}), 400
 
     # --- FFT du signal complet ---
     spectrum = fft(signal)

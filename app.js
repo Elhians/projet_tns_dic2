@@ -39,6 +39,7 @@ const state = {
   frequencies:    [],
   filteredTimeData: null,
   filteredFreqData: [],
+  filteredAudioUrl: null,
   filterType:     "bandpass",
   isFiltered:     false,
   isPlaying:      false,
@@ -58,6 +59,13 @@ const state = {
   eqAnimFft:      null,
   waveAnimRec:    null,
 };
+
+function toApiAbsoluteUrl(pathOrUrl) {
+  if (!pathOrUrl) return null;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const apiRoot = API_BASE.replace(/\/api\/?$/, "");
+  return `${apiRoot}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
 
 /* ============================================================
    NAVIGATION ONGLETS
@@ -394,9 +402,12 @@ function handleFileUpload(input) {
 
 async function loadAudioFile(file) {
   state.fileName    = file.name;
+  state.serverId    = null;
   state.isFiltered  = false;
+  state.filteredAudioUrl = null;
   state.filteredTimeData = null;
   state.filteredFreqData = [];
+  document.getElementById("downloadBtn").disabled = true;
 
   document.getElementById("dropzoneText").textContent = file.name;
   document.getElementById("audioFileName").textContent = file.name;
@@ -465,10 +476,17 @@ async function loadAudioFile(file) {
         drawSpectrum();
         toast(`Fichier chargé : ${file.name}`, "success");
       } else {
-        toast(`Fichier chargé (analyse locale — Flask: ${res.status})`, "info");
+        state.serverId = null;
+        let msg = `Analyse serveur indisponible (HTTP ${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = err.error;
+        } catch {}
+        toast(`Fichier chargé, mais ${msg}`, "error");
       }
     } catch {
-      toast(`Fichier chargé : ${file.name} (analyse locale)`, "success");
+      state.serverId = null;
+      toast(`Fichier chargé, mais impossible de joindre Flask pour l'analyse`, "error");
     }
   } catch {
     toast("Erreur lors du décodage audio", "error");
@@ -524,73 +542,60 @@ async function applyFilter() {
 
   if (fmin >= fmax) { toast("fmin doit être inférieur à fmax", "error"); return; }
 
-  // --- Appel Flask /api/filter ---
-  if (state.serverId) {
-    try {
-      const res = await fetch(API.filter(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          serverId:   state.serverId,
-          filterType: state.filterType,
-          fmin, fmax,
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      state.filteredTimeData = new Float32Array(data.filteredTimeData);
-      state.filteredFreqData = data.filteredFreqData;
-      state.filteredAudioUrl = data.audioUrl;
-      state.isFiltered = true;
-      document.getElementById("filteredWaveCard").classList.remove("hidden");
-      drawWaveformStatic("filteredWaveCanvas", state.filteredTimeData, "secondary");
-      drawSpectrum();
-      document.getElementById("downloadBtn").disabled = false;
-      toast("Filtre appliqué !", "success");
-      return;
-    } catch (err) {
-      toast(`Erreur Flask : ${err.message} — aperçu local activé`, "error");
-    }
-  }
-
-  // Preview côté client (masquage fréquentiel visuel)
-  const sampleRate = state.audioBuffer.sampleRate;
-  const bw = sampleRate / (state.frequencies.length * 2);
-  const newFreqData = state.freqData.map((amp, i) => {
-    const f = i * bw;
-    if (state.filterType === "bandpass") return (f >= fmin && f <= fmax) ? amp : 0;
-    else return (f >= fmin && f <= fmax) ? 0 : amp;
-  });
-  state.filteredFreqData = newFreqData;
-
-  // Reconstruction approximative du signal temporel
-  const filtered = new Float32Array(state.timeData.length);
-  for (let i = 0; i < state.timeData.length; i++) {
-    filtered[i] = state.timeData[i] * 0.8;
-  }
-  state.filteredTimeData = filtered;
-  state.isFiltered = true;
-
-  document.getElementById("filteredWaveCard").classList.remove("hidden");
-  drawWaveformStatic("filteredWaveCanvas", filtered, "secondary");
-  drawSpectrum();
-  document.getElementById("downloadBtn").disabled = false;
-  toast("Aperçu local appliqué — reconstruction complète via Flask", "info");
-}
-
-async function handleDownload() {
-  if (!state.filteredTimeData) return;
-
-  // --- Téléchargement via Flask ---
-  if (state.filteredAudioUrl) {
-    const a = document.createElement("a");
-    a.href = state.filteredAudioUrl;
-    a.download = "signal_filtre.wav";
-    a.click();
+  if (!state.serverId) {
+    toast("Analyse serveur non disponible. Rechargez le fichier puis réessayez.", "error");
     return;
   }
 
-  toast("Appliquez d'abord le filtre pour générer le fichier WAV", "info");
+  try {
+    const res = await fetch(API.filter(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverId:   state.serverId,
+        filterType: state.filterType,
+        fmin, fmax,
+      }),
+    });
+
+    if (!res.ok) {
+      let msg = `Erreur filtre (HTTP ${res.status})`;
+      try {
+        const err = await res.json();
+        if (err?.error) msg = err.error;
+      } catch {
+        msg = await res.text();
+      }
+      throw new Error(msg);
+    }
+
+    const data = await res.json();
+    state.filteredTimeData = new Float32Array(data.filteredTimeData);
+    state.filteredFreqData = data.filteredFreqData;
+    state.filteredAudioUrl = toApiAbsoluteUrl(data.audioUrl);
+    state.isFiltered = true;
+    document.getElementById("filteredWaveCard").classList.remove("hidden");
+    drawWaveformStatic("filteredWaveCanvas", state.filteredTimeData, "secondary");
+    drawSpectrum();
+    document.getElementById("downloadBtn").disabled = !state.filteredAudioUrl;
+    toast("Filtre appliqué !", "success");
+  } catch (err) {
+    state.filteredAudioUrl = null;
+    state.isFiltered = false;
+    document.getElementById("downloadBtn").disabled = true;
+    toast(`Erreur Flask : ${err.message}`, "error");
+  }
+}
+
+async function handleDownload() {
+  if (!state.filteredAudioUrl) {
+    toast("Aucun WAV filtré disponible. Appliquez d'abord le filtre.", "info");
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = state.filteredAudioUrl;
+  a.download = "signal_filtre.wav";
+  a.click();
 }
 
 /* ============================================================
