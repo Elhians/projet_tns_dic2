@@ -408,6 +408,11 @@ async function loadAudioFile(file) {
   state.filteredTimeData = null;
   state.filteredFreqData = [];
   document.getElementById("downloadBtn").disabled = true;
+  document.getElementById("filteredAudioCard").classList.add("hidden");
+  const filteredPlayer = document.getElementById("filteredAudioPlayer");
+  filteredPlayer.pause();
+  filteredPlayer.removeAttribute("src");
+  filteredPlayer.load();
 
   document.getElementById("dropzoneText").textContent = file.name;
   document.getElementById("audioFileName").textContent = file.name;
@@ -578,11 +583,22 @@ async function applyFilter() {
     drawWaveformStatic("filteredWaveCanvas", state.filteredTimeData, "secondary");
     drawSpectrum();
     document.getElementById("downloadBtn").disabled = !state.filteredAudioUrl;
+    if (state.filteredAudioUrl) {
+      const player = document.getElementById("filteredAudioPlayer");
+      player.src = state.filteredAudioUrl;
+      player.load();
+      document.getElementById("filteredAudioCard").classList.remove("hidden");
+    }
     toast("Filtre appliqué !", "success");
   } catch (err) {
     state.filteredAudioUrl = null;
     state.isFiltered = false;
     document.getElementById("downloadBtn").disabled = true;
+    document.getElementById("filteredAudioCard").classList.add("hidden");
+    const player = document.getElementById("filteredAudioPlayer");
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
     toast(`Erreur Flask : ${err.message}`, "error");
   }
 }
